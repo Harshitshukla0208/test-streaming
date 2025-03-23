@@ -5,6 +5,9 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [authToken, setAuthToken] = useState('eyJraWQiOiJXMnRwOFA1eCt5VU1LbEhBd3FueUFsOEhzWDZTYWx3NTJYRTBRTHBpXC9HVT0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI0MWQzNGRiYS04MGExLTcwNzctNGQxMC02M2I1OGY4ZDYxNDciLCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAuYXAtc291dGgtMS5hbWF6b25hd3MuY29tXC9hcC1zb3V0aC0xX25HeVlBbkNtMSIsImNsaWVudF9pZCI6IjZrZmhzYTVsaGZiOGpvZ21kZG11YmwzYmJjIiwib3JpZ2luX2p0aSI6IjRlZTVjNmIyLTUxNmItNDEyYi1hMWU4LTUzOGE0Mjk4Y2JiZiIsImV2ZW50X2lkIjoiMzQ0MTQyZTQtZWQ1Ny00ZjM1LWI2NTQtYTdmYmY4NWE3YmNhIiwidG9rZW5fdXNlIjoiYWNjZXNzIiwic2NvcGUiOiJhd3MuY29nbml0by5zaWduaW4udXNlci5hZG1pbiIsImF1dGhfdGltZSI6MTc0MjcwNjg5OCwiZXhwIjoxNzQyNzM1Njk4LCJpYXQiOjE3NDI3MDY4OTgsImp0aSI6ImE1ZDZjOTFhLTUyOGQtNDMxZS04MDRhLTJiYWU4ZTFkZTU5MyIsInVzZXJuYW1lIjoiNDFkMzRkYmEtODBhMS03MDc3LTRkMTAtNjNiNThmOGQ2MTQ3In0.Yn0axCQiAEPejqZ4LlxTdlBon7J1xPkdh7G3t7wlV7m5uncrhOlH45vTuBhtOzAGLDHTaEzkLyDnIubgbh2tV2I8gT5_WyNbKM1gZZrapUtOnE0QrZ5x08m34NXbYPmeM4yiPFKNwJFh3YuOWllWhHwIjagRxS_ZnWXo92Niv1hnPTwrxVGBc74FB_V-SvREVV7DTRD0J5gqJMQ4duFBdDXvoyNlbRVTcP4-grg6i0wmWfSmqRB3Ck3LtSNAUc9D0lcgrjJtTrKsP-DEozptA5PiKjVBeX8IMTxO0HH_NrdTvTtf_NYviupIgxWMll2PnHI3WAKU0FmHFe0IcGYOqA');
+  const [astId, setAstId] = useState('asst_vj32xccLWqWCUkQiOWzHOHht');
+  const [threadId, setThreadId] = useState('thread_TlNRdGAiPwKA8VPXrueisNjL');
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -32,64 +35,42 @@ function App() {
     setInput('');
     
     try {
-      const response = await fetch('http://localhost:8000/stream', {
+      // Create FormData object
+      const formData = new FormData();
+      formData.append('astId', astId);
+      formData.append('threadId', threadId);
+      formData.append('message', userInput);
+
+      const response = await fetch('http://127.0.0.1:8000/api/chats/create-chat', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'accept': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+          // Note: Do not set Content-Type when using FormData, the browser will set it with the correct boundary
         },
-        body: JSON.stringify(userInput)
+        body: formData
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      // Process the stream
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
+      // Handle the response
+      const data = await response.json();
+      
+      // Update the assistant message with the response
+      setMessages(prev => {
+        const updated = [...prev];
+        const lastMessage = updated[updated.length - 1];
         
-        const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
-        
-        // Process complete SSE messages
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.text) {
-                // Update the assistant's message with new content
-                setMessages(prev => {
-                  const updated = [...prev];
-                  const lastMessage = updated[updated.length - 1];
-                  
-                  // Make sure we're updating the assistant message
-                  if (lastMessage.role === 'assistant') {
-                    lastMessage.content += data.text;
-                  }
-                  
-                  return updated;
-                });
-              }
-              
-              // Handle long wait notification
-              if (data.longwait) {
-                console.log("Long wait indicated, assistant is processing...");
-              }
-            } catch (parseError) {
-              console.error('Error parsing SSE data:', parseError);
-            }
-          }
+        if (lastMessage.role === 'assistant') {
+          // Assuming the API returns a response with a message field
+          // Adjust this according to your actual API response structure
+          lastMessage.content = data.response || data.message || JSON.stringify(data);
         }
-      }
+        
+        return updated;
+      });
       
       setIsLoading(false);
       
@@ -103,7 +84,7 @@ function App() {
         const lastMessage = updated[updated.length - 1];
         
         if (lastMessage.role === 'assistant') {
-          lastMessage.content += " [Error: " + error.message + "]";
+          lastMessage.content = `Error: ${error.message}`;
         }
         
         return updated;
@@ -113,6 +94,40 @@ function App() {
 
   return (
     <div className="chat-container">      
+      {/* Authentication config section */}
+      <div className="config-section">
+        <div className="config-item">
+          <label>Auth Token:</label>
+          <input 
+            type="text" 
+            value={authToken} 
+            onChange={(e) => setAuthToken(e.target.value)} 
+            className="config-input"
+            placeholder="Enter auth token"
+          />
+        </div>
+        <div className="config-item">
+          <label>Assistant ID:</label>
+          <input 
+            type="text" 
+            value={astId} 
+            onChange={(e) => setAstId(e.target.value)} 
+            className="config-input"
+            placeholder="Enter assistant ID"
+          />
+        </div>
+        <div className="config-item">
+          <label>Thread ID:</label>
+          <input 
+            type="text" 
+            value={threadId} 
+            onChange={(e) => setThreadId(e.target.value)} 
+            className="config-input"
+            placeholder="Enter thread ID"
+          />
+        </div>
+      </div>
+
       <div className="message-container">
         {messages.length === 0 && (
           <div className="welcome-message">
