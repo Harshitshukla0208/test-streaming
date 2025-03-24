@@ -55,22 +55,44 @@ function App() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Handle the response
-      const data = await response.json();
+      // First try to parse as JSON
+      let responseData;
+      const responseText = await response.text();
       
-      // Update the assistant message with the response
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastMessage = updated[updated.length - 1];
+      try {
+        // Try to parse as JSON first
+        responseData = JSON.parse(responseText);
+        // If it's JSON, extract the response text
+        const responseContent = responseData.response || responseData.message || JSON.stringify(responseData);
         
-        if (lastMessage.role === 'assistant') {
-          // Assuming the API returns a response with a message field
-          // Adjust this according to your actual API response structure
-          lastMessage.content = data.response || data.message || JSON.stringify(data);
-        }
+        // Update the assistant message with the response
+        setMessages(prev => {
+          const updated = [...prev];
+          const lastMessage = updated[updated.length - 1];
+          
+          if (lastMessage.role === 'assistant') {
+            lastMessage.content = responseContent;
+          }
+          
+          return updated;
+        });
+      } catch (parseError) {
+        // If it's not JSON, use the plain text directly
+        // Remove "[STREAM COMPLETED]" if present
+        const cleanedText = responseText.replace('[STREAM COMPLETED]', '').trim();
         
-        return updated;
-      });
+        // Update the assistant message with the text response
+        setMessages(prev => {
+          const updated = [...prev];
+          const lastMessage = updated[updated.length - 1];
+          
+          if (lastMessage.role === 'assistant') {
+            lastMessage.content = cleanedText;
+          }
+          
+          return updated;
+        });
+      }
       
       setIsLoading(false);
       
